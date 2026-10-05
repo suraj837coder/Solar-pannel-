@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Solar Tracking System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #0f172a; font-family: 'Inter', sans-serif; }
+        #canvas-container { width: 100vw; height: 100vh; display: block; }
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; height: 20px; width: 20px; border-radius: 50%;
+            background: #fbbf24; cursor: pointer; margin-top: -8px;
+            box-shadow: 0 0 10px rgba(251, 191, 36, 0.8);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%; height: 6px; cursor: pointer; background: #475569; border-radius: 3px;
+        }
+        input[type=range]:focus { outline: none; }
+    </style>
+</head>
+<body class="text-slate-100">
+    <div id="canvas-container"></div>
+
+    <div class="absolute top-0 left-0 w-full p-6 pointer-events-none flex justify-between items-start z-10">
+        <div>
+            <h1 class="text-3xl font-bold text-white drop-shadow-lg flex items-center gap-3">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" fill="#fbbf24" viewBox="0 0 256 256"><path d="M120,40V16a8,8,0,0,1,16,0V40a8,8,0,0,1-16,0Zm8,24a64,64,0,1,0,64,64A64.07,64.07,0,0,0,128,64Zm-64,64a8,8,0,0,1-8,8H32a8,8,0,0,1,0-16H56A8,8,0,0,1,64,128Zm160-8a8,8,0,0,0-8,8h24a8,8,0,0,0,0-16H216A8,8,0,0,0,224,120ZM66.34,189.66a8,8,0,0,0,11.32-11.32l-17-17a8,8,0,0,0-11.32,11.32Zm123.32-11.32a8,8,0,0,0,11.32,11.32l17-17a8,8,0,0,0-11.32-11.32ZM128,192a8,8,0,0,0-8,8v24a8,8,0,0,0,16,0V200A8,8,0,0,0,128,192ZM77.66,77.66a8,8,0,0,0,0-11.32l-17-17a8,8,0,0,0-11.32,11.32l17,17A8,8,0,0,0,77.66,77.66Zm129-28.32a8,8,0,0,0-11.32,0l-17,17a8,8,0,0,0,11.32,11.32l17-17A8,8,0,0,0,206.68,49.34Z"></path></svg>
+                Single-Axis Solar Tracker
+            </h1>
+            <p class="text-slate-300 mt-2 max-w-md drop-shadow-md text-sm">
+                Interactive 3D simulation of a solar tracking system. Drag the slider to move the sun and watch the panel automatically adjust to face it. You can drag and zoom the 3D scene directly.
+            </p>
+        </div>
+
+        <div class="bg-slate-800/80 backdrop-blur-md p-4 rounded-xl border border-slate-700 shadow-xl pointer-events-auto">
+            <h3 class="text-sm font-semibold text-slate-300 mb-2 uppercase tracking-wider">Tracker Status</h3>
+            <div class="flex flex-col gap-2">
+                <div class="flex justify-between items-center gap-6"><span class="text-slate-400 text-sm">Sun Angle:</span><span id="sun-angle-display" class="font-mono text-amber-400 font-medium">0°</span></div>
+                <div class="flex justify-between items-center gap-6"><span class="text-slate-400 text-sm">Panel Tilt:</span><span id="panel-tilt-display" class="font-mono text-blue-400 font-medium">0°</span></div>
+                <div class="flex justify-between items-center gap-6"><span class="text-slate-400 text-sm">Efficiency:</span><span id="efficiency-display" class="font-mono text-emerald-400 font-medium">100%</span></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="absolute bottom-8 left-1/2 transform -translate-x-1/2 w-11/12 max-w-3xl pointer-events-auto z-10">
+        <div class="bg-slate-900/90 backdrop-blur-xl p-6 rounded-2xl border border-slate-700/50 shadow-2xl">
+            <div class="flex justify-between text-xs font-semibold text-slate-400 uppercase tracking-widest mb-4">
+                <span>☀ East (Sunrise)</span>
+                <span id="time-display" class="text-amber-400 font-mono text-base">12:00 PM</span>
+                <span>West (Sunset) ☀</span>
+            </div>
+            <input type="range" id="sun-slider" min="0" max="180" value="90" class="w-full">
+            <div class="text-center mt-3 text-sm text-slate-400">Manual Sun Control (Move slider to simulate time of day)</div>
+        </div>
+    </div>
+
+<script>
+const canvasContainer = document.getElementById('canvas-container');
+const sunSlider = document.getElementById('sun-slider');
+const timeDisplay = document.getElementById('time-display');
+const sunAngleDisplay = document.getElementById('sun-angle-display');
+const panelTiltDisplay = document.getElementById('panel-tilt-display');
+const efficiencyDisplay = document.getElementById('efficiency-display');
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1e293b);
+scene.fog = new THREE.FogExp2(0x1e293b, 0.005);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(25, 20, 35);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+canvasContainer.appendChild(renderer.domElement);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.maxPolarAngle = Math.PI / 2 - 0.05;
+controls.minDistance = 10;
+controls.maxDistance = 100;
+controls.target.set(0, 5, 0);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+
+const sunGroup = new THREE.Group();
+scene.add(sunGroup);
+
+const sunMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(2.5, 32, 32),
+    new THREE.MeshBasicMaterial({ color: 0xffe600 })
+);
+sunGroup.add(sunMesh);
+
+const sunLight = new THREE.PointLight(0xfffae6, 2, 200);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.width = 2048;
+sunLight.shadow.mapSize.height = 2048;
+sunLight.shadow.camera.near = 0.5;
+sunLight.shadow.camera.far = 150;
+sunLight.shadow.bias = -0.001;
+sunMesh.add(sunLight);
+
+const fillLight = new THREE.DirectionalLight(0x90b0d0, 0.3);
+fillLight.position.set(10, 20, -10);
+scene.add(fillLight);
+
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(200, 200),
+    new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8, metalness: 0.1 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const gridHelper = new THREE.GridHelper(100, 50, 0x475569, 0x475569);
+gridHelper.position.y = 0.05;
+scene.add(gridHelper);
+
+const trackerBaseGroup = new THREE.Group();
+scene.add(trackerBaseGroup);
+
+const baseWidth = 20, baseDepth = 14, baseHeight = 0.8;
+const base = new THREE.Mesh(
+    new THREE.BoxGeometry(baseWidth, baseHeight, baseDepth),
+    new THREE.MeshStandardMaterial({ color: 0xffd700, roughness: 0.6 })
+);
+base.position.y = baseHeight / 2;
+base.castShadow = true;
+base.receiveShadow = true;
+trackerBaseGroup.add(base);
+
+const standWidth = 3, standDepth = 4, standHeight = 8;
+const stand = new THREE.Mesh(
+    new THREE.BoxGeometry(standWidth, standHeight, standDepth),
+    new THREE.MeshStandardMaterial({ color: 0x8b4513, roughness: 0.9 })
+);
+stand.position.set(0, baseHeight + standHeight / 2, 0);
+stand.castShadow = true;
+stand.receiveShadow = true;
+trackerBaseGroup.add(stand);
+
+function createBattery(x, z) {
+    const batGroup = new THREE.Group();
+    const body = new THREE.Mesh(
+        new THREE.BoxGeometry(2, 3.5, 2.5),
+        new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.3 })
+    );
+    body.castShadow = true;
+    body.receiveShadow = true;
+
+    const top = new THREE.Mesh(
+        new THREE.BoxGeometry(2, 0.4, 2.5),
+        new THREE.MeshStandardMaterial({ color: 0x1e293b })
+    );
+    top.position.y = 1.95;
+    top.castShadow = true;
+
+    batGroup.add(body, top);
+    batGroup.position.set(x, baseHeight + 3.5 / 2, z);
+    return batGroup;
+}
+trackerBaseGroup.add(createBattery(-6, 3));
+trackerBaseGroup.add(createBattery(-3.5, 3));
+
+const pcbGroup = new THREE.Group();
+const pcb = new THREE.Mesh(
+    new THREE.BoxGeometry(6, 0.2, 5),
+    new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.5 })
+);
+pcb.castShadow = true;
+pcb.receiveShadow = true;
+pcbGroup.add(pcb);
+
+const icGeo = new THREE.BoxGeometry(1.2, 0.3, 0.6);
+const icMat = new THREE.MeshStandardMaterial({ color: 0x111827 });
+for (let i = 0; i < 3; i++) {
+    const ic = new THREE.Mesh(icGeo, icMat);
+    ic.position.set(-1.5 + i * 1.5, 0.2, 0);
+    ic.castShadow = true;
+    pcbGroup.add(ic);
+}
+pcbGroup.position.set(5, baseHeight + 0.1, 2);
+trackerBaseGroup.add(pcbGroup);
+
+const motorGroup = new THREE.Group();
+const motorBody = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.2, 1.2, 3, 32),
+    new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.5, roughness: 0.4 })
+);
+motorBody.rotation.x = Math.PI / 2;
+motorBody.castShadow = true;
+motorBody.receiveShadow = true;
+
+const motorShaft = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.4, 0.4, 4.5, 16),
+    new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8, roughness: 0.2 })
+);
+motorShaft.rotation.x = Math.PI / 2;
+motorShaft.castShadow = true;
+
+motorGroup.add(motorBody, motorShaft);
+motorGroup.position.set(standWidth / 2 + 0.5, baseHeight + standHeight - 1, 0);
+trackerBaseGroup.add(motorGroup);
+
+const pivotGroup = new THREE.Group();
+const pivotY = baseHeight + standHeight - 1;
+pivotGroup.position.set(0, pivotY, 0);
+trackerBaseGroup.add(pivotGroup);
+
+const backingWidth = 16, backingHeight = 0.5, backingDepth = 12;
+const backing = new THREE.Mesh(
+    new THREE.BoxGeometry(backingWidth, backingHeight, backingDepth),
+    new THREE.MeshStandardMaterial({ color: 0xea580c, roughness: 0.7 })
+);
+backing.position.y = backingHeight / 2 + 0.4;
+backing.castShadow = true;
+backing.receiveShadow = true;
+pivotGroup.add(backing);
+
+const panelWidth = 15, panelHeight = 0.3, panelDepth = 11;
+const panel = new THREE.Mesh(
+    new THREE.BoxGeometry(panelWidth, panelHeight, panelDepth),
+    new THREE.MeshStandardMaterial({
+        color: 0x1e3a8a, metalness: 0.6, roughness: 0.2,
+        emissive: 0x0f172a, emissiveIntensity: 0.2
+    })
+);
+panel.position.y = backing.position.y + backingHeight / 2 + panelHeight / 2;
+panel.castShadow = true;
+panel.receiveShadow = true;
+pivotGroup.add(panel);
+
+const ldrGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.8, 16);
+const ldrMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
+const ldr1 = new THREE.Mesh(ldrGeo, ldrMat);
+ldr1.position.set(-backingWidth / 2 + 1, backing.position.y + 0.5, 0);
+const ldr2 = new THREE.Mesh(ldrGeo, ldrMat);
+ldr2.position.set(backingWidth / 2 - 1, backing.position.y + 0.5, 0);
+pivotGroup.add(ldr1, ldr2);
+
+const sunRadius = 45;
+
+function updateTimeDisplay(sliderValue) {
+    const totalMinutes = (parseFloat(sliderValue) / 180) * 12 * 60;
+    const startHour = 6;
+    let currentHour = Math.floor(startHour + totalMinutes / 60);
+    let currentMin = Math.floor(totalMinutes % 60);
+    let ampm = currentHour >= 12 ? 'PM' : 'AM';
+    if (currentHour > 12) currentHour -= 12;
+    if (currentHour === 0) currentHour = 12;
+    const timeStr = `${currentHour.toString().padStart(2, '0')}:${currentMin.toString().padStart(2, '0')} ${ampm}`;
+    timeDisplay.textContent = timeStr;
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    const sliderVal = parseFloat(sunSlider.value);
+    const angleRad = (sliderVal * Math.PI) / 180;
+
+    const sunX = Math.cos(angleRad) * sunRadius;
+    const sunY = Math.sin(angleRad) * sunRadius;
+    sunGroup.position.set(sunX, sunY, 0);
+
+    const dx = sunX - pivotGroup.position.x;
+    const dy = sunY - pivotGroup.position.y;
+    const angleToSun = Math.atan2(dy, dx);
+    const targetRotationZ = angleToSun - Math.PI / 2;
+
+    pivotGroup.rotation.z = targetRotationZ;
+
+    updateTimeDisplay(sliderVal);
+
+    const sunAltitude = Math.round(sliderVal <= 90 ? sliderVal : 180 - sliderVal);
+    sunAngleDisplay.textContent = `${sunAltitude}°`;
+
+    const tiltDeg = Math.round((targetRotationZ * 180) / Math.PI);
+    panelTiltDisplay.textContent = `${tiltDeg}°`;
+
+    const efficiency = Math.max(0, Math.sin(angleRad) * 100);
+    efficiencyDisplay.textContent = `${efficiency.toFixed(1)}%`;
+
+    controls.update();
+    renderer.render(scene, camera);
+}
+
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+animate();
+</script>
+</body>
+</html>
